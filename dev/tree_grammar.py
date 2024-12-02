@@ -1,29 +1,47 @@
-from collections import deque
-from typing import Any, Callable, List, Dict, Tuple
+from typing import Any, Callable, List, Dict, Tuple, Optional, Union
 import random
 from collections import deque
+from pprint import pprint
 
-class lifo(deque):
+class lifo_queue:
+    """
+    LIFO queue (stack) implementation using a deque.
+    """
     def __init__(self):
-        super().__init__()
+        self._stack = deque()
 
     def push(self, item):
-        self.append(item)
+        self._stack.append(item)
 
     def pop(self):
-        return self.pop()
+        if not self.is_empty():
+            return self._stack.pop()
+        else:
+            raise IndexError("pop from empty stack")
 
-class fifo(deque):
+    def is_empty(self):
+        return len(self._stack) == 0        
+
+class fifo_queue:
     def __init__(self):
-        super().__init__()
+        self._queue = deque()
 
     def push(self, item):
-        self.append(item)
+        self._queue.append(item)
 
     def pop(self):
-        return self.popleft()
+        if not self.is_empty():
+            return self._queue.popleft()
+        else:
+            raise IndexError("pop from empty queue")
+        
+    def is_empty(self):
+        return len(self._queue) == 0
 
 class pqueue:
+    """
+    Priority queue implementation using a list.
+    """
     def __init__(self, key=lambda x: x):
         self.queue = []
         self.key = key
@@ -35,9 +53,13 @@ class pqueue:
     def pop(self):
         return self.queue.pop(0)
 
+    def is_empty(self):
+        return len(self.queue) == 0
+
 class Dispatcher:
     def __init__(self):
         self.funcs = {}
+        self._default = None
         self.register_defaults()
 
     def register_defaults(self):
@@ -48,13 +70,47 @@ class Dispatcher:
             raise ValueError(f"Function name already registered: {name}")
         self.funcs[name] = func
 
-    def dispatch(self, name, *args, **kwargs):
+    def unregister(self, name):
         if name not in self.funcs:
-            raise ValueError(f"Invalid function name: {name}")
-        return self.funcs[name](*args, **kwargs)
+            raise ValueError(f"Function name not registered: {name}")
+        del self.funcs[name]
+
+    @property
+    def default(self, name):
+        if self._default is not None:
+            return self.funcs[self.default]
+        elif len(self.funcs) > 0:
+            return self.funcs[next(iter(self.funcs))]
+        else:
+            return None
+        
+    @default.setter
+    def default(self, name):
+        if name not in self.funcs:
+            raise ValueError(f"Function name not registered: {name}")
+        self._default = name
+
+    def __contains__(self, name):
+        return name in self.funcs
     
-    def __call__(self, name, *args, **kwargs):
+    def __iter__(self):
+        return iter(self.funcs)
+    
+    def __len__(self):
+        return len(self.funcs)
+    
+    def dispatch(self, name: Optional[str] = None, *args, **kwargs):
+
+        if name is None:
+            return self.default(*args, **kwargs)
+        elif name in self.funcs:
+            return self.funcs[name](*args, **kwargs)
+    
+    def __call__(self, name: Optional[str] = None, *args, **kwargs):
         return self.dispatch(name, *args, **kwargs)
+    
+    def get(self, name, default=None):
+        return self.funcs.get(name, None)
     
     def __getitem__(self, name):
         return self.funcs[name]
@@ -110,53 +166,21 @@ class QueueDispatcher(Dispatcher):
         super().__init__()
 
     def register_defaults(self):
-        self.register('lifo', lifo)
-        self.register('fifo', fifo)
+        self.register('lifo', lifo_queue)
+        self.register('fifo', fifo_queue)
         self.register('pq', pqueue)
 
 class TreeTraversal:
     """
     Tree-traveral algorithm that allows for custom traversal orders and actions.
-
-    The DSL for traversal order is given by the following BNF:
-    
-    <tuple-order> ::= [<order> (, <order>)*]
-    <order> ::= <queue> |  | {"dir": "up"} | {dir=down, select=<select-type>, child-order=<child-order-type>}
-    <queue> ::= {"queue": <queue-type>(, args=[<args>])?(, kwargs={)}
-    <queue-type> ::= lifo | fifo
-    <pred-func> ::= true | false | <regex-on-node-name> | <python-function>
-    <select-type> ::= all | left | right | random-subset | slice[<index-slice>] | <python-function>
-    <node-order> ::= {"node-order": <node-order-type> <kwargs>*}
-    <node-order-type> ::= "left-to-right" | "right-to-left" | "random" | <python-function>
-    <index-slice> ::= <int> | <int>:<int>
-    <kwargs> ::= (, <key>: <value>)*
-    <value> ::= <int> | <string> | <python-function>
-    <key> ::= <string>
-
-    
-    If visit=<pred-func>, there must be a keyword argument matching the key
-    <pred-func> which} maps to a function of type:
-    
-        [node] -> bool
-    
-    If select=<python-function>, there must be a keyword argument matching
-    the key <python-function> which maps to a function of type:
-    
-        [nodes] -> [selected-nodes]
-    
-    If child-order=<python-function>, there must be a keyword argument matching
-    the key <custom-order> which maps to a function of type:
-    
-        [nodes] -> [permutations(nodes)]
-    
-    We can have multiple custom selectors and custom orders in the same order.
     """
 
     def __init__(self,
-                 order: List[Dict[str, Any]] | None = None,
+                 order: Optional[List[Dict[str, Any]]] = None,
                  max_depth: int = float("inf"),
                  max_results: int = float("inf"),
-                 max_visited: int = float("inf")):
+                 max_visited: int = float("inf"),
+                 debug: bool = False):
 
         if not isinstance(order, list) or not all(isinstance(o, dict) for o in order):
             raise ValueError("`order` must be a list of dictionaries")
@@ -165,6 +189,7 @@ class TreeTraversal:
         self.max_depth = max_depth
         self.max_results = max_results
         self.max_visited = max_visited
+        self.debug = debug
 
         self.dispatcher = {
             'queue': QueueDispatcher(),
@@ -195,66 +220,110 @@ class TreeTraversal:
 
         idx = 0
         queue_type = self.order[idx].get("queue", None)
+        queue = None
         if queue_type is None:
-            queue = lifo()
+            queue = lifo_queue()
         else:
             idx += 1
             if queue_type in self.dispatcher['queue']:
                 queue_dispatcher = self.dispatcher['queue']
-                kwargs = self.order[0].get("kwargs", {})
-                args = self.order[0].get("args", [])
+                kwargs = self.order[idx].get("kwargs", {})
+                args = self.order[idx].get("args", [])
                 queue = queue_dispatcher(*args, **kwargs)
             elif hasattr(queue_type, 'push') and hasattr(queue_type, 'pop'):
                 queue = queue_type
             else:
                 raise ValueError(f"Invalid queue type: {queue_type}")
+            
+        if self.debug:
+            print(f"Queue: {queue}, type: {type(queue)}")
         
-        queue.push((node, 0, iter(self.order[1:])))
+        initial = (node, 0, iter(self.order[idx:]))
+        if self.debug:
+            print(f"Initial node: {node}")
+
+        queue.push(initial)
         visited = []
 
         max_depth = self.max_depth
         if 'max_depth' in kwargs:
             max_depth = kwargs['max_depth']
-            del kwargs['max_depth']
+            #del kwargs['max_depth']
 
         max_results = self.max_results
         if 'max_results' in kwargs:
             max_results = kwargs['max_results']
-            del kwargs['max_results']
+            #del kwargs['max_results']
 
         max_visited = self.max_visited
         if 'max_visited' in kwargs:
             max_visited = kwargs['max_visited']
-            del kwargs['max_visited']
+            #del kwargs['max_visited']
 
         order = self.order
         if 'order' in kwargs:
             order = kwargs['order']
-            del kwargs['order']
+            #del kwargs['order']
+
+        if self.debug:
+            print(f"max_depth: {max_depth}")
+            print(f"max_results: {max_results}")
+            print(f"max_visited: {max_visited}")
+            print(f"order: {order}")
+            print("-" * 40)
 
         while queue:
             node, depth, order_iter = queue.pop()
+
+            if self.debug:
+                print("processing node:")
+                print("- at node:", node)
+                print("- depth:", depth)
+                print("- order_iter:", order_iter)
+
             if depth > max_depth or node in visited:
                 continue
 
-            results = {}
+            results = [] # {}
             action = next(order_iter, None)
             selected_nodes = []
             while action:
+                if self.debug:
+                    print(f"action: {action}")
+
                 if "visit" in action:
+                    if self.debug:
+                        print(f"visiting node: {node}")
                     visit_func_name = action["visit"]
+                    if self.debug:
+                        print(f"visit_func_name: {visit_func_name}")
                     visit_func = self.dispatcher['visit'].get(visit_func_name, lambda node: False)
+                    if self.debug:
+                        print(f"visit_func: {visit_func}")
                     visited.append(node)
+                    if self.debug:
+                        print(f"visited: {visited}")
                     if visit_func(node):
                         results.append((node, depth))
+                        print(f"results: {results}")
                         if len(results) >= max_results:
+                            if self.debug:
+                                print("max_results reached")
                             return results
                     if len(visited) >= max_visited:
                         return results
                 elif "dir" in action:
+                    if self.debug:
+                        print(f"following dir: {action['dir']}")
                     dir = action["dir"]
                     follow = self.dispatcher['follower'].get(dir, lambda node: [])
+                    if self.debug:
+                        print(f"follow: {follow}")
                     next_nodes = follow(node)
+                    if self.debug:
+                        print("next_nodes:")
+                        for n in next_nodes:
+                            print("- ", n)
             
                     sel_action = next(order_iter)
                     if "select" not in sel_action:

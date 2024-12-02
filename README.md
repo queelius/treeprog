@@ -55,9 +55,7 @@ with the `set!` action:
 
 ```json
 {
-    "set!": {
-        "key": "value"
-    }
+    "set!": { "key": "value" }
 }
 ```
 
@@ -77,7 +75,6 @@ nodes in the tree. These values are:
 - `$parent` is the parent of the node.
 - `$sibling` is the sibling of the node.
 - `$root` is the root of the tree.
-- `$tree` is the tree that the node is in.
 - `$results` is a global dictionary of results that the nodes are added to. The
   results are keyed by the value of the `result-name` argument in the `visit`
   action.
@@ -100,11 +97,12 @@ The traversal order description is given by the following BNF:
                         "\"follow\"" ":" <dir> 
                         ("," "\"select\"" ":" <select>)? 
                         ("," "\"select-order\"" ":" <select_order>)?
+                        ("," <args>)?
                     "}"
 <visit>         ::= "{"
                         "\"visit\"" ":" <pred_fn> 
                         ("," "\"result-name\"" ":" <key>)? 
-                        (<args>)? 
+                        ("," <args>)? 
                     "}"
 <cond>          ::= "{"
                         "\"cond\"" ":" "["
